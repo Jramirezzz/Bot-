@@ -1,79 +1,88 @@
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');
+const twilio = require('twilio');
 
-// Versión simplificada: solo recibir mensajes y enviar respuestas.
-// Elimina lógica de IA, bases de datos y manejo de sesiones.
+// ─────────────────────────────────────────────
+// Configuración - variables de entorno
+// ─────────────────────────────────────────────
+const PORT             = process.env.PORT || 3000;
+const ACCOUNT_SID      = process.env.TWILIO_ACCOUNT_SID;
+const AUTH_TOKEN       = process.env.TWILIO_AUTH_TOKEN;
+// Número de Twilio WhatsApp Sandbox: 'whatsapp:+14155238886'
+const FROM_NUMBER      = process.env.TWILIO_WHATSAPP_NUMBER;
 
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-const WHATSAPP_TKN = process.env.WHATSAPP_TOKEN;
-const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'verify_token_example';
-
-if (!WHATSAPP_TKN || !PHONE_ID) {
-  console.warn('Advertencia: WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID no están definidos. Envíos a la API de WhatsApp fallarán si se intenta usar en producción.');
-}
-
-function sendText(to, text) {
-  // Envía un mensaje por la API de WhatsApp (Graph API). Si no está configurada, hace un log y resuelve.
-  if (!WHATSAPP_TKN || !PHONE_ID) {
-    console.log(`[MOCK SEND] to=${to} text=${text}`);
-    return Promise.resolve({ data: { mock: true } });
-  }
-
-  return axios.post(
-    `https://graph.facebook.com/v18.0/${PHONE_ID}/messages`,
-    { messaging_product: 'whatsapp', to, text: { body: text } },
-    { headers: { Authorization: `Bearer ${WHATSAPP_TKN}` } }
+if (!ACCOUNT_SID || !AUTH_TOKEN || !FROM_NUMBER) {
+  console.warn(
+    '⚠️  Faltan variables de entorno de Twilio ' +
+    '(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER). ' +
+    'Los envíos usarán modo mock hasta que las configures.'
   );
 }
 
-// Endpoint para verificación de webhook (GET) y recepción de mensajes (POST)
-app.get('/webhook', (req, res) => {
-  // Soporta el challenge de verificación de Facebook/WhatsApp
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+const client = (ACCOUNT_SID && AUTH_TOKEN) ? twilio(ACCOUNT_SID, AUTH_TOKEN) : null;
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('Webhook verificado correctamente');
-      return res.status(200).send(challenge);
-    }
-    return res.sendStatus(403);
+// ─────────────────────────────────────────────
+// Helper: enviar mensaje de texto por WhatsApp
+// ─────────────────────────────────────────────
+async function sendText(to, body) {
+  if (!client || !FROM_NUMBER) {
+    console.log(`[MOCK SEND] to=${to} | body=${body}`);
+    return;
   }
-  res.send('CaliAndo - Webhook activo');
+  await client.messages.create({
+    from: FROM_NUMBER,         // 'whatsapp:+14155238886' (sandbox) o tu número aprobado
+    to: `whatsapp:${to}`,      // Twilio necesita el prefijo whatsapp:
+    body,
+  });
+}
+
+// ─────────────────────────────────────────────
+// App Express
+// ─────────────────────────────────────────────
+const app = express();
+// Twilio envía el payload como application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+// GET  /webhook  - health check (también útil para verificar que el servidor está up)
+app.get('/webhook', (req, res) => {
+  res.send('CaliAndo Bot - Webhook Twilio activo ✅');
 });
 
+// POST /webhook  - Twilio envía aquí los mensajes entrantes
 app.post('/webhook', async (req, res) => {
   try {
-    const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msg) return res.sendStatus(200);
+    // Twilio envía el número con prefijo: 'whatsapp:+573001234567'
+    const from    = req.body.From;   // ej. 'whatsapp:+573001234567'
+    const to      = req.body.To;     // tu número de Twilio
+    const incoming = req.body.Body;  // texto del mensaje
+    const mediaUrl = req.body.MediaUrl0; // adjunto (si lo hay)
 
-    const from = msg.from;
-    const type = msg.type;
+    console.log('📩 Mensaje recibido:', { from, to, incoming, mediaUrl });
 
-    console.log('Mensaje recibido:', { from, type, raw: msg });
-
-    // Solo manejamos mensajes de texto en esta plantilla
-    if (type === 'text' && msg.text && msg.text.body) {
-      const incoming = msg.text.body;
-      // Respuesta simple: eco
-      const reply = `Echo: ${incoming}`;
-      await sendText(from, reply);
-    } else {
-      // Mensaje no-texto: respuesta genérica
-      await sendText(from, 'Recibí tu mensaje. En esta versión sólo manejo texto.');
+    if (!incoming && !mediaUrl) {
+      // Sin contenido, responder OK para que Twilio no reintente
+      return res.sendStatus(200);
     }
 
+    // Número limpio (sin prefijo 'whatsapp:') para sendText
+    const fromNumber = from.replace('whatsapp:', '');
+
+    if (mediaUrl) {
+      // Mensaje con adjunto (imagen, audio, etc.)
+      await sendText(fromNumber, '📎 Recibí tu archivo. Por ahora sólo proceso texto.');
+    } else {
+      // Respuesta simple: eco del mensaje recibido
+      // 👉 Aquí irá tu lógica de negocio más adelante
+      await sendText(fromNumber, `Echo: ${incoming}`);
+    }
+
+    // Twilio espera un 200 vacío (o TwiML), con 200 es suficiente
     return res.sendStatus(200);
   } catch (err) {
-    console.error('Error en /webhook:', err);
+    console.error('❌ Error en /webhook:', err);
     return res.sendStatus(500);
   }
 });
 
-app.listen(PORT, () => console.log(`Servidor simplificado escuchando en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 CaliAndo Bot escuchando en puerto ${PORT}`));
