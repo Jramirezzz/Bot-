@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+    "node": ">=18 <25"
+  },
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +23,7 @@
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "fuse.js": "^7.1.0",
+    "google-auth-library": "^9.15.1",
     "google-spreadsheet": "^4.1.4",
     "natural": "^8.0.1",
     "node-cron": "^3.0.3",
@@ -32,5 +36,8 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "string-similarity": "^4.0.4",
     "twilio": "^5.12.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.1"
   }
 }
