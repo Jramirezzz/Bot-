@@ -37,15 +37,12 @@ const twilioClientFactory = IS_TEST ? null : require('twilio');
 const client = (!IS_TEST && ACCOUNT_SID && AUTH_TOKEN) ? twilioClientFactory(ACCOUNT_SID, AUTH_TOKEN) : null;
 const hasSheetConfig = !IS_TEST && Boolean(SHEET_ID && GOOGLE_EMAIL && GOOGLE_PRIVATE_KEY);
 let messagesSheet = null;
+const onboardingState = new Map();
 
 const SHEET_HEADERS = [
-  'timestamp',
-  'direction',
-  'from',
-  'to',
-  'body',
-  'mediaUrl',
-  'twilioMessageSid',
+  'name',
+  'phone',
+  'whatsappFrom',
   'rawPayload',
 ];
 
@@ -103,28 +100,45 @@ async function initializeSheet() {
 
     if (!hasHeaders) {
       await messagesSheet.setHeaderRow(SHEET_HEADERS);
+    } else {
+      const currentHeaders = Array.isArray(messagesSheet.headerValues) ? messagesSheet.headerValues : [];
+      const missingHeaders = SHEET_HEADERS.filter((header) => !currentHeaders.includes(header));
+
+      if (missingHeaders.length > 0) {
+        await messagesSheet.setHeaderRow([...currentHeaders, ...missingHeaders]);
+      }
     }
   }
 
   return messagesSheet;
 }
 
-async function saveInboundMessage(payload) {
+async function saveContactMessage(payload, name, phone) {
   if (!hasSheetConfig) return;
 
   const sheet = await initializeSheet();
   if (!sheet) return;
 
   await sheet.addRow({
-    timestamp: new Date().toISOString(),
-    direction: 'inbound',
-    from: payload.From || '',
-    to: payload.To || '',
-    body: payload.Body || '',
-    mediaUrl: payload.MediaUrl0 || '',
-    twilioMessageSid: payload.MessageSid || payload.SmsMessageSid || '',
+    name,
+    phone,
+    whatsappFrom: payload.From || '',
     rawPayload: JSON.stringify(payload),
   });
+}
+
+function sanitizeName(input) {
+  return (input || '').trim().replace(/\s+/g, ' ');
+}
+
+function sanitizePhone(input) {
+  return (input || '').trim();
+}
+
+function isValidPhone(input) {
+  const cleaned = (input || '').replace(/[^\d+]/g, '');
+  const digitsOnly = cleaned.replace(/\D/g, '');
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15;
 }
 
 // ─────────────────────────────────────────────
@@ -180,24 +194,61 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    try {
-      await saveInboundMessage(req.body);
-    } catch (sheetError) {
-      // No rompemos el webhook por un fallo de persistencia
-      console.error('⚠️ No se pudo guardar en Google Sheets:', sheetError.message);
-    }
-
     // Número limpio (sin prefijo 'whatsapp:') para sendText
     const fromNumber = from.replace('whatsapp:', '');
+    const state = onboardingState.get(fromNumber);
 
     if (mediaUrl) {
       // Mensaje con adjunto (imagen, audio, etc.)
       await sendText(fromNumber, '📎 Recibí tu archivo. Por ahora sólo proceso texto.');
-    } else {
-      // Respuesta simple: eco del mensaje recibido
-      // 👉 Aquí irá tu lógica de negocio más adelante
-      await sendText(fromNumber, `Echo: ${incoming}`);
+      return res.sendStatus(200);
     }
+
+    if (!state) {
+      onboardingState.set(fromNumber, { step: 'awaiting_name' });
+      await sendText(fromNumber, '¡Hola! Para continuar, por favor compárteme tu nombre completo.');
+      return res.sendStatus(200);
+    }
+
+    if (state.step === 'awaiting_name') {
+      const name = sanitizeName(incoming);
+
+      if (!name) {
+        await sendText(fromNumber, 'No alcancé a leer tu nombre. Escríbelo de nuevo, por favor.');
+        return res.sendStatus(200);
+      }
+
+      onboardingState.set(fromNumber, {
+        step: 'awaiting_phone',
+        name,
+      });
+
+      await sendText(fromNumber, `Gracias, ${name}. Ahora envíame tu número de celular (con indicativo de país si aplica).`);
+      return res.sendStatus(200);
+    }
+
+    if (state.step === 'awaiting_phone') {
+      const phone = sanitizePhone(incoming);
+
+      if (!isValidPhone(phone)) {
+        await sendText(fromNumber, 'Ese número no parece válido. Intenta de nuevo con solo números y, si quieres, con + al inicio.');
+        return res.sendStatus(200);
+      }
+
+      try {
+        await saveContactMessage(req.body, state.name, phone);
+      } catch (sheetError) {
+        // No rompemos el webhook por un fallo de persistencia
+        console.error('⚠️ No se pudo guardar en Google Sheets:', sheetError.message);
+      }
+
+      onboardingState.delete(fromNumber);
+      await sendText(fromNumber, 'Perfecto. Ya guardé tus datos. Gracias.');
+      return res.sendStatus(200);
+    }
+
+    onboardingState.delete(fromNumber);
+    await sendText(fromNumber, 'Reiniciemos el proceso. Compárteme tu nombre completo, por favor.');
 
     // Twilio espera un 200 vacío (o TwiML), con 200 es suficiente
     return res.sendStatus(200);
