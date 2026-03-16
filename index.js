@@ -191,7 +191,7 @@ app.post('/webhook', async (req, res) => {
 
     if (!incoming && !mediaUrl) {
       // Sin contenido, responder OK para que Twilio no reintente
-      return res.sendStatus(200);
+      return res.status(200).end();
     }
 
     // Número limpio (sin prefijo 'whatsapp:') para sendText
@@ -201,13 +201,13 @@ app.post('/webhook', async (req, res) => {
     if (mediaUrl) {
       // Mensaje con adjunto (imagen, audio, etc.)
       await sendText(fromNumber, '📎 Recibí tu archivo. Por ahora sólo proceso texto.');
-      return res.sendStatus(200);
+      return res.status(200).end();
     }
 
     if (!state) {
       onboardingState.set(fromNumber, { step: 'awaiting_name' });
-      await sendText(fromNumber, '¡Hola! Para continuar, por favor compárteme tu nombre completo.');
-      return res.sendStatus(200);
+      await sendText(fromNumber, 'hola! Qué gusto saludarte. 😊 Para poder brindarte una mejor atención, ¿nos compartirías tu nombre y número de celular? Con eso ya quedamos listos para apoyarte. ¡Muchas gracias!');
+      return res.status(200).end();
     }
 
     if (state.step === 'awaiting_name') {
@@ -215,7 +215,7 @@ app.post('/webhook', async (req, res) => {
 
       if (!name) {
         await sendText(fromNumber, 'No alcancé a leer tu nombre. Escríbelo de nuevo, por favor.');
-        return res.sendStatus(200);
+        return res.status(200).end();
       }
 
       onboardingState.set(fromNumber, {
@@ -224,7 +224,7 @@ app.post('/webhook', async (req, res) => {
       });
 
       await sendText(fromNumber, `Gracias, ${name}. Ahora envíame tu número de celular (con indicativo de país si aplica).`);
-      return res.sendStatus(200);
+      return res.status(200).end();
     }
 
     if (state.step === 'awaiting_phone') {
@@ -232,7 +232,7 @@ app.post('/webhook', async (req, res) => {
 
       if (!isValidPhone(phone)) {
         await sendText(fromNumber, 'Ese número no parece válido. Intenta de nuevo con solo números y, si quieres, con + al inicio.');
-        return res.sendStatus(200);
+        return res.status(200).end();
       }
 
       try {
@@ -244,17 +244,17 @@ app.post('/webhook', async (req, res) => {
 
       onboardingState.delete(fromNumber);
       await sendText(fromNumber, 'Perfecto. Ya guardé tus datos. Gracias.');
-      return res.sendStatus(200);
+      return res.status(200).end();
     }
 
     onboardingState.delete(fromNumber);
     await sendText(fromNumber, 'Reiniciemos el proceso. Compárteme tu nombre completo, por favor.');
 
     // Twilio espera un 200 vacío (o TwiML), con 200 es suficiente
-    return res.sendStatus(200);
+    return res.status(200).end();
   } catch (err) {
     console.error('❌ Error en /webhook:', err);
-    return res.sendStatus(500);
+    return res.status(500).end();
   }
 });
 
