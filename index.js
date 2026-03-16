@@ -91,6 +91,19 @@ async function initializeSheet() {
       title: SHEET_TAB_NAME,
       headerValues: SHEET_HEADERS,
     });
+  } else {
+    // Si la pestaña ya existe pero no tiene encabezados, los definimos.
+    let hasHeaders = false;
+    try {
+      await messagesSheet.loadHeaderRow();
+      hasHeaders = Array.isArray(messagesSheet.headerValues) && messagesSheet.headerValues.length > 0;
+    } catch (error) {
+      hasHeaders = false;
+    }
+
+    if (!hasHeaders) {
+      await messagesSheet.setHeaderRow(SHEET_HEADERS);
+    }
   }
 
   return messagesSheet;
