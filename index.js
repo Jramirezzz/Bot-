@@ -206,7 +206,7 @@ app.post('/webhook', async (req, res) => {
 
     if (!state) {
       onboardingState.set(fromNumber, { step: 'awaiting_name' });
-      await sendText(fromNumber, 'hola! Qué gusto saludarte. 😊 Para poder brindarte una mejor atención, ¿nos compartirías tu nombre y número de celular? Con eso ya quedamos listos para apoyarte. ¡Muchas gracias!');
+      await sendText(fromNumber, 'hola! Qué gusto saludarte. 😊 Para poder brindarte una mejor atención, ¿nos compartirías tu nombre? Con eso ya quedamos listos para apoyarte. ¡Muchas gracias!');
       return res.status(200).end();
     }
 
@@ -243,7 +243,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       onboardingState.delete(fromNumber);
-      await sendText(fromNumber, 'Perfecto. Ya guardé tus datos. Gracias.');
+      await sendText(fromNumber, 'Muchas gracias, te contactaremos lo antes posibles.');
       return res.status(200).end();
     }
 
