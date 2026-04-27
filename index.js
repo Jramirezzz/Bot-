@@ -138,6 +138,21 @@ function isValidPhone(input) {
   return digitsOnly.length >= 7 && digitsOnly.length <= 15;
 }
 
+// Intentar extraer teléfono y nombre desde una sola línea.
+// Ejemplos válidos: "Juan Perez 573001234567" o "Juan Perez +57 3001234567" o "3001234567 Juan"
+function extractPhoneAndName(text) {
+  if (!text) return { name: null, phone: null };
+  const cleaned = text.replace(/[,;|]/g, ' ');
+  // Buscar secuencia de dígitos con posible + al inicio y espacios
+  const phoneMatch = cleaned.match(/(\+?\d[\d \-]{6,}\d)/);
+  if (!phoneMatch) return { name: null, phone: null };
+  const phoneRaw = phoneMatch[0];
+  const namePart = (cleaned.replace(phoneRaw, '') || '').trim();
+  const phone = phoneRaw.replace(/[^\d+]/g, '');
+  const name = namePart ? sanitizeName(namePart) : null;
+  return { name, phone };
+}
+
 // ─────────────────────────────────────────────
 // App Express
 // ─────────────────────────────────────────────
