@@ -227,14 +227,38 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (!state) {
+      // Intentar parsear nombre+tel en una sola línea
+      const parsed = extractPhoneAndName(incoming);
+      if (parsed.name && parsed.phone && isValidPhone(parsed.phone)) {
+        try {
+          await saveContactMessage(req.body, parsed.name, parsed.phone);
+        } catch (sheetError) {
+          console.error('⚠️ No se pudo guardar en Google Sheets:', sheetError.message);
+        }
+        await sendText(fromNumber, `Gracias ${parsed.name}, recibí tu número ${parsed.phone}. Te contactaremos pronto.`);
+        return res.status(200).end();
+      }
+
       onboardingState.set(fromNumber, { step: 'awaiting_name' });
       await sendText(fromNumber, WELCOME_MSG);
       return res.status(200).end();
     }
 
     if (state && state.step === 'awaiting_name') {
-      const name = sanitizeName(incoming);
+      // El usuario puede enviar nombre + teléfono en una sola línea
+      const parsed = extractPhoneAndName(incoming);
+      if (parsed.name && parsed.phone && isValidPhone(parsed.phone)) {
+        try {
+          await saveContactMessage(req.body, parsed.name, parsed.phone);
+        } catch (sheetError) {
+          console.error('⚠️ No se pudo guardar en Google Sheets:', sheetError.message);
+        }
+        onboardingState.delete(fromNumber);
+        await sendText(fromNumber, `Gracias ${parsed.name}, recibí tu número ${parsed.phone}. Te contactaremos pronto.`);
+        return res.status(200).end();
+      }
 
+      const name = sanitizeName(incoming);
       if (!name) {
         await sendText(fromNumber, 'No alcancé a leer tu nombre. Escríbelo de nuevo, por favor.');
         return res.status(200).end();
