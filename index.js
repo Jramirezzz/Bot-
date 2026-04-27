@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
+const fs = require('fs');
+const path = require('path');
 
 // ─────────────────────────────────────────────
 // Configuración - variables de entorno
@@ -111,17 +113,30 @@ async function initializeSheet() {
 }
 
 async function saveContactMessage(payload, name, phone) {
+  const record = {
+    name,
+    phone,
+    whatsappFrom: payload.From || '',
+    rawPayload: JSON.stringify(payload),
+    timestamp: new Date().toISOString(),
+  };
+
+  // Always try to append to local backup first (best-effort)
+  try {
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    const file = path.join(dataDir, 'contacts.jsonl');
+    fs.appendFileSync(file, JSON.stringify(record) + '\n');
+  } catch (fsErr) {
+    console.error('⚠️ No se pudo escribir backup local:', fsErr.message);
+  }
+
   if (!hasSheetConfig) return;
 
   const sheet = await initializeSheet();
   if (!sheet) return;
 
-  await sheet.addRow({
-    name,
-    phone,
-    whatsappFrom: payload.From || '',
-    rawPayload: JSON.stringify(payload),
-  });
+  await sheet.addRow(record);
 }
 
 function sanitizeName(input) {
