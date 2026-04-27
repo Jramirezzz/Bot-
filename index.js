@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
+const { JWT } = require('google-auth-library');
 const fs = require('fs');
 const path = require('path');
 
@@ -79,10 +80,18 @@ async function initializeSheet() {
 
     const doc = new GoogleSpreadsheet(SHEET_ID);
 
-    await doc.useServiceAccountAuth({
-      client_email: GOOGLE_EMAIL,
-      private_key: privateKey,
+    // Use google-auth-library to obtain an access token and set it on the doc
+    const jwtClient = new JWT({
+      email: GOOGLE_EMAIL,
+      key: privateKey,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file'],
     });
+    const tokens = await jwtClient.authorize();
+    const accessToken = tokens && tokens.access_token ? tokens.access_token : (jwtClient.credentials && jwtClient.credentials.access_token);
+    if (!accessToken) throw new Error('No access token from service account');
+
+    // _setAxiosRequestAuth is used internally by google-spreadsheet v4 to attach auth
+    doc._setAxiosRequestAuth({ type: 'Bearer', value: accessToken });
 
     await doc.loadInfo();
     console.log('initializeSheet: loaded doc title=', doc.title);
