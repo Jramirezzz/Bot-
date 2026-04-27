@@ -78,20 +78,20 @@ async function initializeSheet() {
     const privateKey = getPrivateKey();
     if (!privateKey) throw new Error('GOOGLE_PRIVATE_KEY not provided or malformed');
 
-    const doc = new GoogleSpreadsheet(SHEET_ID);
-
-    // Use google-auth-library to obtain an access token and set it on the doc
+    // Obtain access token using JWT
     const jwtClient = new JWT({
       email: GOOGLE_EMAIL,
       key: privateKey,
       scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file'],
     });
-    const tokens = await jwtClient.authorize();
-    const accessToken = tokens && tokens.access_token ? tokens.access_token : (jwtClient.credentials && jwtClient.credentials.access_token);
+    await jwtClient.authorize();
+    const accessToken = jwtClient.credentials && jwtClient.credentials.access_token;
     if (!accessToken) throw new Error('No access token from service account');
 
-    // _setAxiosRequestAuth is used internally by google-spreadsheet v4 to attach auth
-    doc._setAxiosRequestAuth({ type: 'Bearer', value: accessToken });
+    console.log('initializeSheet: access token obtained, creating GoogleSpreadsheet with auth');
+
+    // Create GoogleSpreadsheet with auth - pass the JWT client directly
+    const doc = new GoogleSpreadsheet(SHEET_ID, jwtClient);
 
     await doc.loadInfo();
     console.log('initializeSheet: loaded doc title=', doc.title);
