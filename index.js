@@ -134,38 +134,24 @@ async function saveContactMessage(payload, name, phone) {
     rawPayload: JSON.stringify(payload),
     timestamp: new Date().toISOString(),
   };
-
-  // Always try to append to local backup first (best-effort)
-  try {
-    const dataDir = path.join(__dirname, 'data');
-    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-    const file = path.join(dataDir, 'contacts.jsonl');
-    fs.appendFileSync(file, JSON.stringify(record) + '\n');
-  } catch (fsErr) {
-    console.error('⚠️ No se pudo escribir backup local:', fsErr.message);
-  }
-
   if (!hasSheetConfig) return;
 
-  // Try to save to Google Sheets and log outcomes
-  let sheet;
   try {
-    sheet = await initializeSheet();
-  } catch (initErr) {
-    console.error('saveContactMessage: initializeSheet threw:', initErr && initErr.message ? initErr.message : initErr);
-  }
-
-  if (!sheet) {
-    console.warn('saveContactMessage: Google Sheet not available, record kept in local backup only.');
-    return;
-  }
-
-  try {
+    const sheet = await initializeSheet();
+    if (!sheet) return;
     const added = await sheet.addRow(record);
     console.log('saveContactMessage: row added to sheet, id?', added && added._rowNumber ? added._rowNumber : 'unknown');
-  } catch (addErr) {
-    console.error('saveContactMessage: error adding row to sheet:', addErr && addErr.message ? addErr.message : addErr);
+  } catch (err) {
+    console.error('saveContactMessage: error while saving to Google Sheets:', err && err.message ? err.message : err);
   }
+}
+
+// Helper to escape CSV fields
+function escapeCsv(val) {
+  if (val == null) return '';
+  const s = String(val).replace(/"/g, '""');
+  if (s.includes(',') || s.includes('\n') || s.includes('\r') || s.includes('"')) return `"${s}"`;
+  return s;
 }
 
 // Debug endpoint will be registered after app is initialized (see below)
