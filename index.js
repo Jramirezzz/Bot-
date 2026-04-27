@@ -68,13 +68,26 @@ app.post('/webhook', async (req, res) => {
     // Número limpio (sin prefijo 'whatsapp:') para sendText
     const fromNumber = from.replace('whatsapp:', '');
 
+    // Mensaje de bienvenida / entrada pedido por el usuario
+    const WELCOME_MSG = '¡Hola! Gracias por comunicarte con la oficina de Reclamaciones Soat.¿Tuviste un accidente de tránsito? Estas en el lugar indicado.\n\nAquí te ayudamos a reclamar lo que te corresponde. Danos tu nombre y celular, nosotros nos contactaremos.';
+
     if (mediaUrl) {
       // Mensaje con adjunto (imagen, audio, etc.)
       await sendText(fromNumber, '📎 Recibí tu archivo. Por ahora sólo proceso texto.');
+    } else if (!incoming || incoming.trim().length === 0) {
+      // Si no hay texto, enviar la bienvenida
+      await sendText(fromNumber, WELCOME_MSG);
     } else {
-      // Respuesta simple: eco del mensaje recibido
-      // 👉 Aquí irá tu lógica de negocio más adelante
-      await sendText(fromNumber, `Echo: ${incoming}`);
+      // Si hay texto, por ahora respondemos con la bienvenida solo en primer mensaje
+      // Para simplificar, si el usuario escribe "hola" o similares enviaremos la bienvenida
+      const low = incoming.trim().toLowerCase();
+      const greetings = ['hola', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches', 'hi', 'hello'];
+      if (greetings.includes(low)) {
+        await sendText(fromNumber, WELCOME_MSG);
+      } else {
+        // Respuesta simple: eco del mensaje recibido (puedes cambiar la lógica aquí)
+        await sendText(fromNumber, `Echo: ${incoming}`);
+      }
     }
 
     // Twilio espera un 200 vacío (o TwiML), con 200 es suficiente
@@ -85,4 +98,4 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 CaliAndo Bot escuchando en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Bot escuchando en puerto ${PORT}`));
