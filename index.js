@@ -213,7 +213,7 @@ app.post('/webhook', async (req, res) => {
 
     if (!state) {
       onboardingState.set(fromNumber, { step: 'awaiting_name' });
-      await sendText(fromNumber, '¡Hola! Qué gusto saludarte. 😊 Para poder brindarte una mejor atención, ¿nos compartirías tu nombre? Con eso ya quedamos listos para apoyarte. ¡Muchas gracias!');
+      await sendText(fromNumber, WELCOME_MSG);
       return res.status(200).end();
     }
 
