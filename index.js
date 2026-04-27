@@ -47,6 +47,9 @@ const SHEET_HEADERS = [
   'rawPayload',
 ];
 
+// Startup info for debugging
+console.log('STARTUP: hasSheetConfig=', !!hasSheetConfig, 'SHEET_ID=', SHEET_ID ? `${SHEET_ID.slice(0,8)}...` : 'none');
+
 // ─────────────────────────────────────────────
 // Helper: enviar mensaje de texto por WhatsApp
 // ─────────────────────────────────────────────
@@ -69,47 +72,49 @@ function getPrivateKey() {
 async function initializeSheet() {
   if (messagesSheet || !hasSheetConfig) return messagesSheet;
 
-  const privateKey = getPrivateKey();
-  const doc = new GoogleSpreadsheet(SHEET_ID);
+  try {
+    console.log('initializeSheet: starting for SHEET_ID=', SHEET_ID);
+    const privateKey = getPrivateKey();
+    if (!privateKey) throw new Error('GOOGLE_PRIVATE_KEY not provided or malformed');
 
-  // Autenticar con la cuenta de servicio usando client_email y private_key
-  await doc.useServiceAccountAuth({
-    client_email: GOOGLE_EMAIL,
-    private_key: privateKey,
-  });
+    const doc = new GoogleSpreadsheet(SHEET_ID);
 
-  await doc.loadInfo();
-
-  messagesSheet = doc.sheetsByTitle[SHEET_TAB_NAME];
-
-  if (!messagesSheet) {
-    messagesSheet = await doc.addSheet({
-      title: SHEET_TAB_NAME,
-      headerValues: SHEET_HEADERS,
+    await doc.useServiceAccountAuth({
+      client_email: GOOGLE_EMAIL,
+      private_key: privateKey,
     });
-  } else {
-    // Si la pestaña ya existe pero no tiene encabezados, los definimos.
-    let hasHeaders = false;
-    try {
-      await messagesSheet.loadHeaderRow();
-      hasHeaders = Array.isArray(messagesSheet.headerValues) && messagesSheet.headerValues.length > 0;
-    } catch (error) {
-      hasHeaders = false;
-    }
 
-    if (!hasHeaders) {
+    await doc.loadInfo();
+    console.log('initializeSheet: loaded doc title=', doc.title);
+
+    messagesSheet = doc.sheetsByTitle[SHEET_TAB_NAME];
+
+    if (!messagesSheet) {
+      console.log('initializeSheet: sheet not found, creating new tab', SHEET_TAB_NAME);
+      messagesSheet = await doc.addSheet({ title: SHEET_TAB_NAME, headerValues: SHEET_HEADERS });
       await messagesSheet.setHeaderRow(SHEET_HEADERS);
     } else {
-      const currentHeaders = Array.isArray(messagesSheet.headerValues) ? messagesSheet.headerValues : [];
-      const missingHeaders = SHEET_HEADERS.filter((header) => !currentHeaders.includes(header));
+      // Ensure headers exist
+      try {
+        await messagesSheet.loadHeaderRow();
+      } catch (e) {
+        await messagesSheet.setHeaderRow(SHEET_HEADERS);
+      }
 
+      const currentHeaders = Array.isArray(messagesSheet.headerValues) ? messagesSheet.headerValues : [];
+      const missingHeaders = SHEET_HEADERS.filter((h) => !currentHeaders.includes(h));
       if (missingHeaders.length > 0) {
         await messagesSheet.setHeaderRow([...currentHeaders, ...missingHeaders]);
       }
     }
-  }
 
-  return messagesSheet;
+    console.log('initializeSheet: sheet ready, title=', messagesSheet.title);
+    return messagesSheet;
+  } catch (err) {
+    console.error('initializeSheet: error initializing Google Sheet:', err && err.message ? err.message : err);
+    messagesSheet = null;
+    return null;
+  }
 }
 
 async function saveContactMessage(payload, name, phone) {
@@ -133,11 +138,47 @@ async function saveContactMessage(payload, name, phone) {
 
   if (!hasSheetConfig) return;
 
-  const sheet = await initializeSheet();
-  if (!sheet) return;
+  // Try to save to Google Sheets and log outcomes
+  let sheet;
+  try {
+    sheet = await initializeSheet();
+  } catch (initErr) {
+    console.error('saveContactMessage: initializeSheet threw:', initErr && initErr.message ? initErr.message : initErr);
+  }
 
-  await sheet.addRow(record);
+  if (!sheet) {
+    console.warn('saveContactMessage: Google Sheet not available, record kept in local backup only.');
+    return;
+  }
+
+  try {
+    const added = await sheet.addRow(record);
+    console.log('saveContactMessage: row added to sheet, id?', added && added._rowNumber ? added._rowNumber : 'unknown');
+  } catch (addErr) {
+    console.error('saveContactMessage: error adding row to sheet:', addErr && addErr.message ? addErr.message : addErr);
+  }
 }
+
+// Debug endpoint to view last N local backups (protected by DEBUG_TOKEN env var)
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || null;
+app.get('/debug/backup', (req, res) => {
+  if (!DEBUG_TOKEN) return res.status(404).send('Not found');
+  const token = req.query.token || req.headers['x-debug-token'];
+  if (token !== DEBUG_TOKEN) return res.status(403).send('Forbidden');
+
+  const file = path.join(__dirname, 'data', 'contacts.jsonl');
+  if (!fs.existsSync(file)) return res.status(200).json({ ok: true, entries: [] });
+  try {
+    const data = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
+    const last = data.slice(-50).map((l) => {
+      try { return JSON.parse(l); } catch { return l; }
+    });
+    return res.status(200).json({ ok: true, count: data.length, last });
+  } catch (err) {
+    console.error('debug/backup: error reading backup file:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 function sanitizeName(input) {
   return (input || '').trim().replace(/\s+/g, ' ');
