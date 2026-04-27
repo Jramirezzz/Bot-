@@ -159,26 +159,7 @@ async function saveContactMessage(payload, name, phone) {
   }
 }
 
-// Debug endpoint to view last N local backups (protected by DEBUG_TOKEN env var)
-const DEBUG_TOKEN = process.env.DEBUG_TOKEN || null;
-app.get('/debug/backup', (req, res) => {
-  if (!DEBUG_TOKEN) return res.status(404).send('Not found');
-  const token = req.query.token || req.headers['x-debug-token'];
-  if (token !== DEBUG_TOKEN) return res.status(403).send('Forbidden');
-
-  const file = path.join(__dirname, 'data', 'contacts.jsonl');
-  if (!fs.existsSync(file)) return res.status(200).json({ ok: true, entries: [] });
-  try {
-    const data = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
-    const last = data.slice(-50).map((l) => {
-      try { return JSON.parse(l); } catch { return l; }
-    });
-    return res.status(200).json({ ok: true, count: data.length, last });
-  } catch (err) {
-    console.error('debug/backup: error reading backup file:', err.message);
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
+// Debug endpoint will be registered after app is initialized (see below)
 
 function sanitizeName(input) {
   return (input || '').trim().replace(/\s+/g, ' ');
@@ -216,6 +197,27 @@ const app = express();
 // Twilio envía el payload como application/x-www-form-urlencoded
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+
+// Debug endpoint to view last N local backups (protected by DEBUG_TOKEN env var)
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || null;
+app.get('/debug/backup', (req, res) => {
+  if (!DEBUG_TOKEN) return res.status(404).send('Not found');
+  const token = req.query.token || req.headers['x-debug-token'];
+  if (token !== DEBUG_TOKEN) return res.status(403).send('Forbidden');
+
+  const file = path.join(__dirname, 'data', 'contacts.jsonl');
+  if (!fs.existsSync(file)) return res.status(200).json({ ok: true, entries: [] });
+  try {
+    const data = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
+    const last = data.slice(-50).map((l) => {
+      try { return JSON.parse(l); } catch { return l; }
+    });
+    return res.status(200).json({ ok: true, count: data.length, last });
+  } catch (err) {
+    console.error('debug/backup: error reading backup file:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // GET  /webhook  - health check (también útil para verificar que el servidor está up)
 app.get('/webhook', (req, res) => {
